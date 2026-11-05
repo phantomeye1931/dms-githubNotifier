@@ -48,6 +48,7 @@ PluginComponent {
     property int issuesCount: 0
     property var prList: []
     property var issueList: []
+    property bool hasNotifications: false
 
     property string profileUrl: ""
     property string avatarUrl: ""
@@ -257,6 +258,7 @@ PluginComponent {
         let tasks = [];
         if (root.showPRs) tasks.push("pr");
         if (root.showIssues) tasks.push("issue");
+        tasks.push("notifications");
 
         if (tasks.length === 0) {
             root.lastUpdated = new Date();
@@ -297,6 +299,17 @@ PluginComponent {
                 done();
             }, 0, 10000);
         }
+
+        Proc.runCommand(null, [root.ghBinary, "api", "notifications", "--jq", "length"], (stdout, exitCode) => {
+            if (!root || gen !== root.refreshEpoch)
+                return;
+
+            if (exitCode === 0) {
+                const n = parseInt((stdout || "").trim(), 10);
+                root.hasNotifications = !isNaN(n) && n > 0;
+            }
+            done();
+        }, 0, 10000);
     }
 
     // Horizontal Bar Pill
@@ -306,17 +319,38 @@ PluginComponent {
 
             DankSVGIcon {
                 source: Qt.resolvedUrl("github.svg")
-                size: Theme.iconSize - 7
+                size: Theme.iconSize - 10
                 anchors.verticalCenter: parent.verticalCenter
-                colorOverride: root.lastError ? Theme.error : (root.totalCount > 0 ? Theme.primary : (Theme.widgetIconColor || Theme.surfaceText))
+                colorOverride: root.lastError ? Theme.error : (Theme.widgetIconColor || Theme.surfaceText)
             }
 
-            StyledText {
-                text: root.totalCount.toString()
-                font.pixelSize: Theme.fontSizeMedium
-                font.weight: Font.Medium
-                color: root.lastError ? Theme.error : Theme.surfaceText
+            Item {
+                id: hPillCountWrap
+                width: hPillCount.implicitWidth + (root.hasNotifications ? hPillDot.width + Math.round(hPillCount.font.pixelSize * 0.7) : 0)
+                height: hPillCount.implicitHeight
                 anchors.verticalCenter: parent.verticalCenter
+
+                StyledText {
+                    id: hPillCount
+                    text: root.totalCount.toString()
+                    font.pixelSize: Theme.fontSizeMedium
+                    font.weight: Font.Medium
+                    color: root.lastError ? Theme.error : Theme.surfaceText
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+
+                Rectangle {
+                    id: hPillDot
+                    width: 6
+                    height: 6
+                    radius: 3
+                    color: Theme.primary
+                    visible: root.hasNotifications
+                    anchors.verticalCenter: hPillCount.verticalCenter
+                    anchors.left: hPillCount.right
+                    anchors.leftMargin: Math.round(hPillCount.font.pixelSize * 0.7)
+                }
             }
         }
     }
@@ -336,16 +370,37 @@ PluginComponent {
 
                 DankSVGIcon {
                     source: Qt.resolvedUrl("github.svg")
-                    size: root.iconSize
+                    size: root.iconSize - 3
                     anchors.horizontalCenter: parent.horizontalCenter
-                    colorOverride: root.lastError ? Theme.error : (root.totalCount > 0 ? Theme.primary : (Theme.widgetIconColor || Theme.surfaceText))
+                    colorOverride: root.lastError ? Theme.error : (Theme.widgetIconColor || Theme.surfaceText)
                 }
 
-                StyledText {
-                    text: root.totalCount.toString()
-                    font.pixelSize: Theme.fontSizeSmall
-                    color: root.lastError ? Theme.error : Theme.surfaceText
+                Item {
+                    id: vPillCountWrap
+                    width: vPillCount.implicitWidth + (root.hasNotifications ? vPillDot.width + Math.round(vPillCount.font.pixelSize * 0.7) : 0)
+                    height: vPillCount.implicitHeight
                     anchors.horizontalCenter: parent.horizontalCenter
+
+                    StyledText {
+                        id: vPillCount
+                        text: root.totalCount.toString()
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: root.lastError ? Theme.error : Theme.surfaceText
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                    Rectangle {
+                        id: vPillDot
+                        width: 6
+                        height: 6
+                        radius: 3
+                        color: Theme.primary
+                        visible: root.hasNotifications
+                        anchors.verticalCenter: vPillCount.verticalCenter
+                        anchors.left: vPillCount.right
+                        anchors.leftMargin: Math.round(vPillCount.font.pixelSize * 0.7)
+                    }
                 }
             }
         }
@@ -445,7 +500,44 @@ PluginComponent {
                             }
                         }
 
-                        // Right: Single Refresh Action Button
+                        // Right: Notifications + Refresh Action Buttons
+                        Rectangle {
+                            id: headerNotificationsBtn
+                            anchors.right: headerRefreshBtn.left
+                            anchors.rightMargin: Theme.spacingS
+                            anchors.verticalCenter: parent.verticalCenter
+                            property bool isHovered: notificationsMa.containsMouse
+
+                            width: 38
+                            height: 38
+
+                            color: isHovered ? Theme.withAlpha(Theme.primary, 0.15) : Theme.withAlpha(Theme.surfaceContainer, 0.4)
+                            border.width: 1
+                            border.color: Theme.withAlpha(Theme.primary, isHovered ? 0.3 : 0.15)
+                            radius: Theme.cornerRadius
+
+                            scale: notificationsMa.pressed ? 0.92 : (isHovered ? 1.05 : 1.0)
+                            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+
+                            DankRipple { id: notificationsRip; anchors.fill: parent; cornerRadius: Theme.cornerRadius; rippleColor: Theme.primary }
+
+                            DankIcon {
+                                name: "notifications"
+                                size: 20
+                                color: Theme.primary
+                                anchors.centerIn: parent
+                            }
+
+                            MouseArea {
+                                id: notificationsMa
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onPressed: (m) => notificationsRip.trigger(m.x, m.y)
+                                onClicked: root.openUrl("https://github.com/notifications")
+                            }
+                        }
+
                         Rectangle {
                             id: headerRefreshBtn
                             anchors.right: parent.right
